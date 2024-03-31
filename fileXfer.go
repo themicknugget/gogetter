@@ -50,10 +50,12 @@ func downloadFile(connection *ssh.Client, remoteFilePath string, pair DirectoryP
 	defer localFile.Close()
 
 	// Copy the file contents to the local file
-	if _, err := io.Copy(localFile, stdout); err != nil {
-		fmt.Printf("Failed to copy file contents: %v\n", err)
+	bytesCopied, err := io.Copy(localFile, stdout)
+	if err != nil {
+		fmt.Printf("Failed to copy file content: %v\n", err)
 		return
 	}
+	fmt.Printf("Downloaded %s to %s (%d bytes copied)\n", remoteFilePath, localFilePath, bytesCopied)
 
 	// If copy is successful, delete the remote file
 	session, err = connection.NewSession()
