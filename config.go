@@ -15,14 +15,18 @@ type Config struct {
 }
 
 type HostConfig struct {
-	SSHServer       string `yaml:"ssh_server"`
-	SSHPort         int    `yaml:"ssh_port"`
-	SSHUser         string `yaml:"ssh_user"`
-	SSHKey          string `yaml:"ssh_key"`
-	HostKey         string `yaml:"host_key,omitempty"`
+	SSHServer      string          `yaml:"ssh_server"`
+	SSHPort        int             `yaml:"ssh_port"`
+	SSHUser        string          `yaml:"ssh_user"`
+	SSHKey         string          `yaml:"ssh_key"`
+	HostKey        string          `yaml:"host_key,omitempty"`
+	DirectoryPairs []DirectoryPair `yaml:"directory_pairs"`
+	Interval       int             `yaml:"interval"` // Interval in seconds
+}
+
+type DirectoryPair struct {
 	RemoteDirectory string `yaml:"remote_directory"`
 	LocalDirectory  string `yaml:"local_directory"`
-	Interval        int    `yaml:"interval"` // Interval in seconds
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -37,11 +41,11 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	// Override UID/GID from environment variables if present
-	if uid, present := os.LookupEnv("IPUID"); present {
+	if uid, present := os.LookupEnv("PUID"); present {
 		if parsedUID, err := strconv.Atoi(uid); err == nil {
 			config.UID = parsedUID
 		} else {
-			fmt.Printf("Warning: Could not parse IPUID='%s' as integer\n", uid)
+			fmt.Printf("Warning: Could not parse PUID='%s' as integer\n", uid)
 		}
 	}
 

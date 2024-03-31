@@ -1,0 +1,22 @@
+# Global settings
+uid: 1000  # Optional: Override with PUID environment variable
+gid: 1000  # Optional: Override with PGID environment variable
+
+# Host configurations for SSH connections
+hosts:
+  - ssh_server: "example.com"
+    ssh_port: 22
+    ssh_user: "user1"
+    ssh_key: "/path/to/private/key1"
+    remote_directory: "/remote/path/for/user1"
+    local_directory: "/local/path/for/user1"
+    # Optional: Specify the host key for verification (base64 encoded)
+    host_key: "AAAAB3NzaC1yc2EAAAADAQABAAABAQD...exampleKey"
+
+  - ssh_server: "example2.com"
+    ssh_port: 22
+    ssh_user: "user2"
+    ssh_key: "/path/to/private/key2"
+    remote_directory: "/remote/path/for/user2"
+    local_directory: "/local/path/for/user2"
+    # No host_key provided for this host; could rely on environment variable overrides or insecure defaults

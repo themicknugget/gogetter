@@ -12,7 +12,7 @@ import (
 
 // downloadFile downloads a file from the remote server to the local directory and then deletes the remote file.
 // It now replicates the directory structure of the source system on the destination system.
-func downloadFile(connection *ssh.Client, remoteFilePath string, config HostConfig) {
+func downloadFile(connection *ssh.Client, remoteFilePath string, pair DirectoryPair) {
 	session, err := connection.NewSession()
 	if err != nil {
 		fmt.Printf("Failed to create session: %v\n", err)
@@ -33,8 +33,8 @@ func downloadFile(connection *ssh.Client, remoteFilePath string, config HostConf
 	}
 
 	// Replicates the directory structure relative to the remote base directory.
-	relativePath := strings.TrimPrefix(remoteFilePath, config.RemoteDirectory)
-	localFilePath := filepath.Join(config.LocalDirectory, relativePath)
+	relativePath := strings.TrimPrefix(remoteFilePath, pair.RemoteDirectory)
+	localFilePath := filepath.Join(pair.LocalDirectory, relativePath)
 
 	// Ensure the local directory structure exists.
 	if err := os.MkdirAll(filepath.Dir(localFilePath), 0755); err != nil {
@@ -71,7 +71,7 @@ func downloadFile(connection *ssh.Client, remoteFilePath string, config HostConf
 }
 
 // FindAndDownloadFiles searches for files modified in the last minute and downloads them.
-func FindAndDownloadFiles(connection *ssh.Client, config HostConfig) {
+func FindAndDownloadFiles(connection *ssh.Client, pair DirectoryPair) {
 	session, err := connection.NewSession()
 	if err != nil {
 		fmt.Printf("Failed to create session: %v\n", err)
@@ -80,7 +80,7 @@ func FindAndDownloadFiles(connection *ssh.Client, config HostConfig) {
 	defer session.Close()
 
 	// Find files modified in the last minute
-	cmd := fmt.Sprintf("find %s -type f -mmin -1", config.RemoteDirectory)
+	cmd := fmt.Sprintf("find %s -type f -mmin -1", pair.RemoteDirectory)
 	output, err := session.CombinedOutput(cmd)
 	if err != nil {
 		fmt.Printf("Failed to find files: %v\n", err)
@@ -95,7 +95,7 @@ func FindAndDownloadFiles(connection *ssh.Client, config HostConfig) {
 
 	for _, filePath := range filePaths {
 		if filePath != "" {
-			downloadFile(connection, filePath, config)
+			downloadFile(connection, filePath, pair)
 		}
 	}
 }

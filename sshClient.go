@@ -73,7 +73,11 @@ func MonitorHost(config HostConfig, shutdownCh <-chan struct{}) {
 				fmt.Printf("Successfully connected to %s\n", config.SSHServer)
 			}
 
-			FindAndDownloadFiles(client, config)
+			// New logic to handle multiple directory pairs
+			for _, pair := range config.DirectoryPairs {
+				// Example operation using pair.RemoteDirectory and pair.LocalDirectory
+				FindAndDownloadFiles(client, pair)
+			}
 			time.Sleep(time.Duration(config.Interval) * time.Second)
 		}
 	}
