@@ -10,8 +10,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// downloadFile downloads a file from the remote server to the local directory and then deletes the remote file.
-// It now replicates the directory structure of the source system on the destination system.
+// downloadFile downloads a file from the remote server to the local directory. It prints out start messages,
+// checks file size after transfer, and deletes the remote file if the transfer was successful.
 func downloadFile(client *ssh.Client, remoteFilePath string, config DirectoryPair) {
 	// Create a new SFTP client
 	sftpClient, err := sftp.NewClient(client)
@@ -29,40 +29,60 @@ func downloadFile(client *ssh.Client, remoteFilePath string, config DirectoryPai
 	}
 	defer remoteFile.Close()
 
-	// Ensure the local directory structure exists
-	localFilePath := computeLocalFilePath(remoteFilePath, config)
-	if err := os.MkdirAll(filepath.Dir(localFilePath), 0755); err != nil {
-		fmt.Printf("Failed to create local directories for '%s': %v\n", localFilePath, err)
+	// Get remote file size for later comparison
+	remoteFileInfo, err := remoteFile.Stat()
+	if err != nil {
+		fmt.Printf("Failed to stat remote file %s: %v\n", remoteFilePath, err)
 		return
 	}
+	remoteFileSize := remoteFileInfo.Size()
 
-	// Create the local file
-	localFile, err := os.Create(localFilePath)
+	localFilePath := computeLocalFilePath(remoteFilePath, config)
+
+	fmt.Printf("Starting download: %s to %s\n", remoteFilePath, localFilePath)
+
+	localFile, err := createLocalFile(localFilePath)
 	if err != nil {
 		fmt.Printf("Failed to create local file '%s': %v\n", localFilePath, err)
 		return
 	}
 	defer localFile.Close()
 
-	// Copy the file from remote to local
 	bytesCopied, err := remoteFile.WriteTo(localFile)
 	if err != nil {
 		fmt.Printf("Failed to copy file from remote to local: %v\n", err)
 		return
 	}
 
-	fmt.Printf("Successfully downloaded %s to %s (%d bytes copied)\n", remoteFilePath, localFilePath, bytesCopied)
+	// Check if the entire file was copied
+	if bytesCopied != remoteFileSize {
+		fmt.Printf("File size mismatch: copied %d bytes; expected %d bytes\n", bytesCopied, remoteFileSize)
+		return
+	}
+
+	// Delete the remote file if the size matches
+	if err := sftpClient.Remove(remoteFilePath); err != nil {
+		fmt.Printf("Failed to delete remote file %s after successful download: %v\n", remoteFilePath, err)
+		return
+	}
+
+	fmt.Printf("Successfully downloaded and deleted %s (%d bytes copied)\n", remoteFilePath, bytesCopied)
 }
 
 func computeLocalFilePath(remoteFilePath string, config DirectoryPair) string {
 	relativePath, err := filepath.Rel(config.RemoteDirectory, remoteFilePath)
 	if err != nil {
-		// Handle the error, e.g., log it or default to using the base name of the remote file.
-		fmt.Printf("Error computing relative path for '%s': %v\n", remoteFilePath, err)
-		// Fallback to base name if the relative path cannot be computed.
-		return filepath.Join(config.LocalDirectory, filepath.Base(remoteFilePath))
+		fmt.Printf("Error computing relative path for '%s': %v; using base name.\n", remoteFilePath, err)
+		relativePath = filepath.Base(remoteFilePath)
 	}
 	return filepath.Join(config.LocalDirectory, relativePath)
+}
+
+func createLocalFile(localFilePath string) (*os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(localFilePath), 0755); err != nil {
+		return nil, fmt.Errorf("failed to create local directories for '%s': %v", localFilePath, err)
+	}
+	return os.Create(localFilePath)
 }
 
 // FindAndDownloadFiles searches for files modified in the last minute and downloads them.
