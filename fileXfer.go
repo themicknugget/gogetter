@@ -2,74 +2,67 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
 
 // downloadFile downloads a file from the remote server to the local directory and then deletes the remote file.
 // It now replicates the directory structure of the source system on the destination system.
-func downloadFile(connection *ssh.Client, remoteFilePath string, pair DirectoryPair) {
-	session, err := connection.NewSession()
+func downloadFile(client *ssh.Client, remoteFilePath string, config DirectoryPair) {
+	// Create a new SFTP client
+	sftpClient, err := sftp.NewClient(client)
 	if err != nil {
-		fmt.Printf("Failed to create session: %v\n", err)
+		fmt.Printf("Failed to create SFTP client: %v\n", err)
 		return
 	}
-	defer session.Close()
+	defer sftpClient.Close()
 
-	// Open the remote file for reading
-	stdout, err := session.StdoutPipe()
+	// Open the remote file
+	remoteFile, err := sftpClient.Open(remoteFilePath)
 	if err != nil {
-		fmt.Printf("Failed to open remote file: %v\n", err)
+		fmt.Printf("Failed to open remote file %s: %v\n", remoteFilePath, err)
 		return
 	}
+	defer remoteFile.Close()
 
-	if err := session.Start(fmt.Sprintf("cat %s", remoteFilePath)); err != nil {
-		fmt.Printf("Failed to start file transfer: %v\n", err)
-		return
-	}
-
-	// Replicates the directory structure relative to the remote base directory.
-	relativePath := strings.TrimPrefix(remoteFilePath, pair.RemoteDirectory)
-	localFilePath := filepath.Join(pair.LocalDirectory, relativePath)
-
-	// Ensure the local directory structure exists.
+	// Ensure the local directory structure exists
+	localFilePath := computeLocalFilePath(remoteFilePath, config)
 	if err := os.MkdirAll(filepath.Dir(localFilePath), 0755); err != nil {
-		fmt.Printf("Failed to create local directory structure: %v\n", err)
+		fmt.Printf("Failed to create local directories for '%s': %v\n", localFilePath, err)
 		return
 	}
 
+	// Create the local file
 	localFile, err := os.Create(localFilePath)
 	if err != nil {
-		fmt.Printf("Failed to create local file: %v\n", err)
+		fmt.Printf("Failed to create local file '%s': %v\n", localFilePath, err)
 		return
 	}
 	defer localFile.Close()
 
-	// Copy the file contents to the local file
-	bytesCopied, err := io.Copy(localFile, stdout)
+	// Copy the file from remote to local
+	bytesCopied, err := remoteFile.WriteTo(localFile)
 	if err != nil {
-		fmt.Printf("Failed to copy file content: %v\n", err)
+		fmt.Printf("Failed to copy file from remote to local: %v\n", err)
 		return
 	}
-	fmt.Printf("Downloaded %s to %s (%d bytes copied)\n", remoteFilePath, localFilePath, bytesCopied)
 
-	// If copy is successful, delete the remote file
-	session, err = connection.NewSession()
+	fmt.Printf("Successfully downloaded %s to %s (%d bytes copied)\n", remoteFilePath, localFilePath, bytesCopied)
+}
+
+func computeLocalFilePath(remoteFilePath string, config DirectoryPair) string {
+	relativePath, err := filepath.Rel(config.RemoteDirectory, remoteFilePath)
 	if err != nil {
-		fmt.Printf("Failed to create session for deletion: %v\n", err)
-		return
+		// Handle the error, e.g., log it or default to using the base name of the remote file.
+		fmt.Printf("Error computing relative path for '%s': %v\n", remoteFilePath, err)
+		// Fallback to base name if the relative path cannot be computed.
+		return filepath.Join(config.LocalDirectory, filepath.Base(remoteFilePath))
 	}
-	defer session.Close()
-
-	if _, err := session.CombinedOutput(fmt.Sprintf("rm %s", remoteFilePath)); err != nil {
-		fmt.Printf("Failed to delete %s on the remote server: %v\n", remoteFilePath, err)
-	} else {
-		fmt.Printf("Downloaded and deleted %s from the remote server. Local copy: %s\n", remoteFilePath, localFilePath)
-	}
+	return filepath.Join(config.LocalDirectory, relativePath)
 }
 
 // FindAndDownloadFiles searches for files modified in the last minute and downloads them.
