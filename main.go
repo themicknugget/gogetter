@@ -20,7 +20,7 @@ func dropPrivileges(uid, gid int) error {
 }
 
 func main() {
-	configPath := flag.String("cfg", "config.yaml", "path to the configuration file")
+	configPath := flag.String("cfg", "/config/config.yaml", "path to the configuration file")
 	flag.Parse()
 
 	config, err := LoadConfig(*configPath)
