@@ -79,8 +79,8 @@ func FindAndDownloadFiles(connection *ssh.Client, pair DirectoryPair) {
 	}
 	defer session.Close()
 
-	// Find files modified in the last minute
-	cmd := fmt.Sprintf("find %s -type f -mmin -1", pair.RemoteDirectory)
+	// Find files modified more than a minute ago
+	cmd := fmt.Sprintf("find %s -type f -mmin +1", pair.RemoteDirectory)
 	output, err := session.CombinedOutput(cmd)
 	if err != nil {
 		fmt.Printf("Failed to find files: %v\n", err)
