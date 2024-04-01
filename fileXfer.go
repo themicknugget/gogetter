@@ -104,7 +104,6 @@ func FindAndDownloadFiles(connection *ssh.Client, pair DirectoryPair) {
 
 	filePaths := strings.Split(string(output), "\n")
 	if len(filePaths) == 0 || (len(filePaths) == 1 && filePaths[0] == "") {
-		fmt.Println("No files modified in the last minute.")
 		return
 	}
 
