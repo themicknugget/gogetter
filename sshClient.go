@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -79,6 +80,35 @@ func MonitorHost(config HostConfig, shutdownCh <-chan struct{}) {
 				FindAndDownloadFiles(client, pair)
 			}
 			time.Sleep(time.Duration(config.Interval) * time.Second)
+		}
+	}
+}
+
+// FindAndDownloadFiles searches for files modified in the last minute and downloads them.
+func FindAndDownloadFiles(connection *ssh.Client, pair DirectoryPair) {
+	session, err := connection.NewSession()
+	if err != nil {
+		fmt.Printf("Failed to create session: %v\n", err)
+		return
+	}
+	defer session.Close()
+
+	// Find files modified more than a minute ago
+	cmd := fmt.Sprintf("find %s -type f -mmin +1", pair.RemoteDirectory)
+	output, err := session.CombinedOutput(cmd)
+	if err != nil {
+		fmt.Printf("Failed to find files: %v\n", err)
+		return
+	}
+
+	filePaths := strings.Split(string(output), "\n")
+	if len(filePaths) == 0 || (len(filePaths) == 1 && filePaths[0] == "") {
+		return
+	}
+
+	for _, filePath := range filePaths {
+		if filePath != "" {
+			downloadFile(connection, filePath, pair)
 		}
 	}
 }

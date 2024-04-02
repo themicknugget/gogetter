@@ -2,18 +2,17 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
 
-// downloadFile downloads a file from the remote server to the local directory. It prints out start messages,
-// checks file size after transfer, and deletes the remote file if the transfer was successful.
 func downloadFile(client *ssh.Client, remoteFilePath string, config DirectoryPair) {
-	// Create a new SFTP client
 	sftpClient, err := sftp.NewClient(client)
 	if err != nil {
 		fmt.Printf("Failed to create SFTP client: %v\n", err)
@@ -21,7 +20,6 @@ func downloadFile(client *ssh.Client, remoteFilePath string, config DirectoryPai
 	}
 	defer sftpClient.Close()
 
-	// Open the remote file
 	remoteFile, err := sftpClient.Open(remoteFilePath)
 	if err != nil {
 		fmt.Printf("Failed to open remote file %s: %v\n", remoteFilePath, err)
@@ -29,18 +27,7 @@ func downloadFile(client *ssh.Client, remoteFilePath string, config DirectoryPai
 	}
 	defer remoteFile.Close()
 
-	// Get remote file size for later comparison
-	remoteFileInfo, err := remoteFile.Stat()
-	if err != nil {
-		fmt.Printf("Failed to stat remote file %s: %v\n", remoteFilePath, err)
-		return
-	}
-	remoteFileSize := remoteFileInfo.Size()
-
 	localFilePath := computeLocalFilePath(remoteFilePath, config)
-
-	fmt.Printf("Starting download: %s to %s\n", remoteFilePath, localFilePath)
-
 	localFile, err := createLocalFile(localFilePath)
 	if err != nil {
 		fmt.Printf("Failed to create local file '%s': %v\n", localFilePath, err)
@@ -48,32 +35,56 @@ func downloadFile(client *ssh.Client, remoteFilePath string, config DirectoryPai
 	}
 	defer localFile.Close()
 
-	bytesCopied, err := remoteFile.WriteTo(localFile)
-	if err != nil {
-		fmt.Printf("Failed to copy file from remote to local: %v\n", err)
-		return
+	var totalBytes int64
+	startTime := time.Now()
+
+	buf := make([]byte, 32*1024) // 32KB buffer
+	for {
+		n, err := remoteFile.Read(buf)
+		if n > 0 {
+			n2, err2 := localFile.Write(buf[:n])
+			atomic.AddInt64(&totalBytes, int64(n2))
+			elapsed := time.Since(startTime).Seconds()
+			rate := float64(totalBytes) / elapsed
+			rateStr := formatTransferRate(rate)
+			fmt.Printf("\rTransferring %s: %d bytes transferred at %s...", remoteFilePath, totalBytes, rateStr)
+			if err2 != nil {
+				fmt.Printf("\nFailed to write to local file: %v\n", err2)
+				return
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			fmt.Printf("\nFailed to read from remote file: %v\n", err)
+			return
+		}
 	}
 
-	// Check if the entire file was copied
-	if bytesCopied != remoteFileSize {
-		fmt.Printf("File size mismatch: copied %d bytes; expected %d bytes\n", bytesCopied, remoteFileSize)
-		return
-	}
+	fmt.Printf("\nSuccessfully downloaded %s to %s\n", remoteFilePath, localFilePath)
+}
 
-	// Delete the remote file if the size matches
-	if err := sftpClient.Remove(remoteFilePath); err != nil {
-		fmt.Printf("Failed to delete remote file %s after successful download: %v\n", remoteFilePath, err)
-		return
+func formatTransferRate(rate float64) string {
+	const (
+		KB = 1 << 10
+		MB = 1 << 20
+	)
+	switch {
+	case rate > MB:
+		return fmt.Sprintf("%.2f MB/s", rate/MB)
+	case rate > KB:
+		return fmt.Sprintf("%.2f KB/s", rate/KB)
+	default:
+		return fmt.Sprintf("%.2f bytes/s", rate)
 	}
-
-	fmt.Printf("Successfully downloaded and deleted %s (%d bytes copied)\n", remoteFilePath, bytesCopied)
 }
 
 func computeLocalFilePath(remoteFilePath string, config DirectoryPair) string {
 	relativePath, err := filepath.Rel(config.RemoteDirectory, remoteFilePath)
 	if err != nil {
-		fmt.Printf("Error computing relative path for '%s': %v; using base name.\n", remoteFilePath, err)
-		relativePath = filepath.Base(remoteFilePath)
+		fmt.Printf("Error computing relative path for '%s', using base name: %v\n", remoteFilePath, err)
+		return filepath.Join(config.LocalDirectory, filepath.Base(remoteFilePath))
 	}
 	return filepath.Join(config.LocalDirectory, relativePath)
 }
@@ -83,33 +94,4 @@ func createLocalFile(localFilePath string) (*os.File, error) {
 		return nil, fmt.Errorf("failed to create local directories for '%s': %v", localFilePath, err)
 	}
 	return os.Create(localFilePath)
-}
-
-// FindAndDownloadFiles searches for files modified in the last minute and downloads them.
-func FindAndDownloadFiles(connection *ssh.Client, pair DirectoryPair) {
-	session, err := connection.NewSession()
-	if err != nil {
-		fmt.Printf("Failed to create session: %v\n", err)
-		return
-	}
-	defer session.Close()
-
-	// Find files modified more than a minute ago
-	cmd := fmt.Sprintf("find %s -type f -mmin +1", pair.RemoteDirectory)
-	output, err := session.CombinedOutput(cmd)
-	if err != nil {
-		fmt.Printf("Failed to find files: %v\n", err)
-		return
-	}
-
-	filePaths := strings.Split(string(output), "\n")
-	if len(filePaths) == 0 || (len(filePaths) == 1 && filePaths[0] == "") {
-		return
-	}
-
-	for _, filePath := range filePaths {
-		if filePath != "" {
-			downloadFile(connection, filePath, pair)
-		}
-	}
 }
