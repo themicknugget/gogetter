@@ -27,6 +27,14 @@ func downloadFile(client *ssh.Client, remoteFilePath string, config DirectoryPai
 	}
 	defer remoteFile.Close()
 
+	// Get remote file size for later comparison
+	remoteFileInfo, err := remoteFile.Stat()
+	if err != nil {
+		fmt.Printf("Failed to stat remote file %s: %v\n", remoteFilePath, err)
+		return
+	}
+	remoteFileSize := remoteFileInfo.Size()
+
 	localFilePath := computeLocalFilePath(remoteFilePath, config)
 	localFile, err := createLocalFile(localFilePath)
 	if err != nil {
@@ -60,6 +68,18 @@ func downloadFile(client *ssh.Client, remoteFilePath string, config DirectoryPai
 			fmt.Printf("\nFailed to read from remote file: %v\n", err)
 			return
 		}
+	}
+
+	// Check if the entire file was copied
+	if totalBytes != remoteFileSize {
+		fmt.Printf("File size mismatch: copied %d bytes; expected %d bytes\n", totalBytes, remoteFileSize)
+		return
+	}
+
+	// Delete the remote file if the size matches
+	if err := sftpClient.Remove(remoteFilePath); err != nil {
+		fmt.Printf("Failed to delete remote file %s after successful download: %v\n", remoteFilePath, err)
+		return
 	}
 
 	fmt.Printf("\nSuccessfully downloaded %s to %s\n", remoteFilePath, localFilePath)
