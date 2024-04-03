@@ -38,7 +38,7 @@ func downloadFile(client *ssh.Client, remoteFilePath string, config DirectoryPai
 	var totalBytes int64
 	startTime := time.Now()
 
-	buf := make([]byte, 32*1024) // 32KB buffer
+	buf := make([]byte, 32*1024*1024) // 32MB buffer
 	for {
 		n, err := remoteFile.Read(buf)
 		if n > 0 {
