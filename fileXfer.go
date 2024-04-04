@@ -43,6 +43,8 @@ func downloadFile(client *ssh.Client, remoteFilePath string, config DirectoryPai
 	}
 	defer localFile.Close()
 
+	fmt.Printf("Starting download of %s to %s\n", remoteFilePath, localFilePath)
+
 	var totalBytes int64
 	startTime := time.Now()
 
